@@ -15,6 +15,7 @@ finish-args:
   - --filesystem=xdg-run/gvfs # make GnomeVFS accessible
   - --filesystem=/run/spnav.sock:ro # allow access to spacenavd
   - --talk-name=org.freedesktop.Flatpak # to launch openscad
+  - --system-talk-name=org.freedesktop.UDisks2
   - --env=TMPDIR=/var/tmp
   - --env=SPNAV_SOCKET=/run/spnav.sock
   - --env=QTWEBENGINEPROCESS_PATH=/app/bin/QtWebEngineProcess
@@ -28,6 +29,11 @@ cleanup:
   - '*.a'
   - '*.la'
 cleanup-commands: [/app/cleanup-BaseApp.sh]
+build-options:
+  no-debuginfo: true
+  strip: true
+  build-args:
+    - --share=network # Required for downloading fmtlib in LinkMerge
 modules:
 
   - shared-modules/glu/glu-9.json
@@ -163,7 +169,8 @@ modules:
       - /share/doc
     sources:
       - type: archive
-        url: http://files.salome-platform.org/Salome/other/med-3.3.1.tar.gz
+        # Mirror, upstream doesn't host this version anymore
+        url: https://src.fedoraproject.org/lookaside/pkgs/med/med-3.3.1.tar.gz/sha512/f1eba3bc69520b862bdab89ce76694f91ed0e6be42c037df8ec655b6314e8ae776083d5ead61fb34097eb8440302969229d1859b6d8fcce51e7551b75d8ebf5f/med-3.3.1.tar.gz
         sha256: dd631ef813838bc7413ff0dd6461d7a0d725bcfababdf772ece67610a8d22588
 
   - name: libspnav
@@ -513,7 +520,8 @@ modules:
       - --enable-fat
     sources:
       - type: archive
-        url: https://gmplib.org/download/gmp/gmp-6.2.1.tar.bz2
+        # Use a mirror of GMP, upstream blocks downloads from GH Actions
+        url: https://www.mirrorservice.org/pub/gnu/gmp/gmp-6.2.1.tar.bz2
         sha256: eae9326beb4158c386e39a356818031bd28f3124cf915f8c5b1dc4c7a36b4d7c
   - name: cgal
     cleanup:
@@ -532,6 +540,7 @@ modules:
 
   - name: IfcOpenShell
     buildsystem: cmake-ninja
+    no-parallel-make: true # Required to not run out of RAM in GH Actions
     builddir: true
     subdir: cmake
     config-opts:
@@ -618,6 +627,8 @@ modules:
     builddir: true
     config-opts:
       - -DCMAKE_BUILD_TYPE=Release
+      - -DCMAKE_VERBOSE_MAKEFILE=1
+      - -DTARGET=CORE2 # Sensible baseline target
     sources:
       - type: archive
         url: https://github.com/xianyi/OpenBLAS/archive/v0.3.9.tar.gz
@@ -645,7 +656,7 @@ modules:
       - /share/doc
     sources:
       - type: archive
-        url: https://gmsh.info/src/gmsh-4.9.5-source.tgz
+        url: https://ftp.dimensiondata.com/mirrors/ftp.gentoo.org/distfiles/d1/gmsh-4.9.5-source.tgz
         sha256: ffd64900844208719c88d91a66c281889023132b7a9e282c51548cb9f6f3ad44
       - type: patch
         path: patches/gmsh-stdint.patch
@@ -703,7 +714,7 @@ modules:
       - type: git
         url: https://github.com/fmtlib/fmt.git
         commit: a33701196adfad74917046096bf5a2aa0ab0bb50 # tag 9.1.0
-  
+
   - name: FreeCAD
     buildsystem: cmake-ninja
     builddir: true
@@ -737,10 +748,13 @@ modules:
       - install -Dm644 ../src/Gui/Icons/freecad-doc.svg ${FLATPAK_DEST}/share/icons/hicolor/scalable/mimetypes/${FLATPAK_ID}.application-x-extension-fcstd.svg
     sources:
       - type: git
-        url: https://github.com/FreeCAD/FreeCAD.git
-        commit: b9bfa5c5507506e4515816414cd27f4851d00489   # tag 0.21.2
-      - type: patch
-        path: patches/OpenSCAD_transfermechanism.patch
+        url: https://github.com/realthunder/FreeCAD.git
+        # The DiligentEngine submodule is broken, and Link{Stage3,Daily} don't currently
+        # utilize submodules at all. See https://github.com/realthunder/FreeCAD/issues/507.
+        disable-submodules: true
+        branch: {{ branch }}
+#      - type: patch
+#        path: patches/OpenSCAD_transfermechanism.patch
       - type: file
         path: openscad.sh
       - type: shell
@@ -754,7 +768,7 @@ modules:
             sed -i 's|@PACKAGE_VERSION@|@PACKAGE_VERSION@.'"$revcount"'|' src/XDGData/org.freecadweb.FreeCAD.appdata.xml.in
             sed -i 's|${PACKAGE_WCURL}|https://github.com/FreeCAD/FreeCAD.git|' src/Build/Version.h.cmake
           - | # fix paths for flatpak environment
-            sed -i 's|/usr|/app|g' cMake/FindOCC.cmake src/Gui/GraphvizView.cpp
+            sed -i 's|/usr|/app|g' cMake/FindOpenCasCade.cmake src/Gui/GraphvizView.cpp
             sitepackagesDir=$(python3 -c 'import sysconfig; print(sysconfig.get_paths()["platlib"])' | sed 's|/usr|/app|')
             sed -i 's|${python_libs}|'"$sitepackagesDir"'|' src/Ext/freecad/CMakeLists.txt
           # We need to properly set the icon name
